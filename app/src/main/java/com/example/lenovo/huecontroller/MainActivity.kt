@@ -6,19 +6,13 @@ import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
+import android.util.Log
 import android.view.View
 import android.widget.Button
 import java.io.IOException
 import java.util.*
 
-// You can generate a unique value for yourself:
-// 1. In the Android Studio menu bar, click Tools > Kotlin > Kotlin REPL
-// 2. In the new window, type:
-// import java.util.*
-// UUID.randomUUID()
-// 3. Click the Run button.
-// 4. After a second, a unique value will appear. Copy that here.
-val BLUETOOTH_UUID: UUID = UUID.fromString("dd88ab89-517f-489d-9129-05cf95300b15")
+val BLUETOOTH_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b7541")
 
 // Indicates that a message has ended. This character cannot appear in a message.
 const val MESSAGE_SEPARATOR: Char = '|'
@@ -42,7 +36,11 @@ class MainActivity : AppCompatActivity() {
     // This will try to connect (or reconnect) to the Raspberry Pi every three seconds.
     Timer().schedule(object : TimerTask() {
       override fun run() {
-        getOrCreateBluetoothSocket()
+        try {
+          getOrCreateBluetoothSocket()
+        } catch (e: Exception) {
+          Log.i("MainActivity", "Periodic connect failed", e)
+        }
       }
     }, 0, 3000)
 
@@ -103,49 +101,54 @@ class MainActivity : AppCompatActivity() {
     synchronized(bluetoothSocketLock) {
       var currentSocket = bluetoothSocket
       if (currentSocket != null) return currentSocket
-      if (bluetoothDevice == null) {
+      var currentDevice = bluetoothDevice
+      if (currentDevice == null) {
         for (device in BluetoothAdapter.getDefaultAdapter().bondedDevices) {
-          if (device.name == "JR") { // TODO probably not a good idea
+          if (device.name == "JR") { // TODO probably not a good idea to hardcode the name
             bluetoothDevice = device
-
-            // Connect to the device.
-            currentSocket = device.createRfcommSocketToServiceRecord(BLUETOOTH_UUID)
-            currentSocket.connect()
-
-            // Start reading data from the socket.
-            Thread(fun() {
-              val read = StringBuilder()
-              val buffer = ByteArray(32)
-              while (true) {
-                val bytesRead = currentSocket.inputStream.read(buffer)
-                if (bytesRead < 0) {
-                  // Is it even possible to get -1 objects?
-                  // Android uses this to signal that the device disconnected.
-                  break
-                }
-                // Add all the data that came from the socket into "read".
-                read.append(String(buffer, 0, bytesRead))
-
-                while (read.contains(MESSAGE_SEPARATOR)) {
-                  // End of a message. Pull it out of the data.
-                  val message = read.substring(0, read.indexOf(MESSAGE_SEPARATOR))
-                  read.removeRange(0, read.indexOf(MESSAGE_SEPARATOR) + 1)
-
-                  runOnUiThread {
-                    receiveMessage(message)
-                  }
-                }
-              }
-            }, "Bluetooth Socket Reader").start()
-
-            // And save the socket for future use.
-            bluetoothSocket = currentSocket
+            currentDevice = device
+            break
           }
         }
       }
-      if (currentSocket == null) {
-        throw IOException("Could not connect to the device")
+      if (currentDevice == null) {
+        throw IOException("Could not find the device")
       }
+      // Connect to the device.
+      currentSocket = currentDevice.createRfcommSocketToServiceRecord(BLUETOOTH_UUID)
+      if (!currentSocket.isConnected) {
+        currentSocket.connect()
+      }
+
+      // Start reading data from the socket.
+      Thread(fun() {
+        val read = StringBuilder()
+        val buffer = ByteArray(32)
+        while (true) {
+          val bytesRead = currentSocket.inputStream.read(buffer)
+          if (bytesRead < 0) {
+            // Is it even possible to get -1 objects?
+            // Android uses this to signal that the device disconnected.
+            break
+          }
+          // Add all the data that came from the socket into "read".
+          read.append(String(buffer, 0, bytesRead))
+
+          while (read.contains(MESSAGE_SEPARATOR)) {
+            // End of a message. Pull it out of the data.
+            val message = read.substring(0, read.indexOf(MESSAGE_SEPARATOR))
+            read.delete(0, read.indexOf(MESSAGE_SEPARATOR) + 1)
+            Log.i("MainActivity", "Got message $message, remaining: $read")
+
+            runOnUiThread {
+              receiveMessage(message)
+            }
+          }
+        }
+      }, "Bluetooth Socket Reader").start()
+
+      // And save the socket for future use.
+      bluetoothSocket = currentSocket
       return currentSocket
     }
   }
