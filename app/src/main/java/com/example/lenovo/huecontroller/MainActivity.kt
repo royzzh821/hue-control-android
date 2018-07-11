@@ -5,7 +5,10 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.os.Bundle
+import android.support.annotation.WorkerThread
 import android.support.v7.app.AppCompatActivity
+import android.view.View
+import android.widget.Button
 import java.io.IOException
 import java.util.*
 
@@ -45,7 +48,23 @@ class MainActivity : AppCompatActivity() {
     }, 0, 3000)
 
     setContentView(R.layout.activity_main)
-  }
+      sendMessage("?") // This will grab the current status of the light.
+      val onbutton = findViewById<View>(R.id.HueOn) as Button
+      onbutton.setOnClickListener(object : View.OnClickListener {
+        override fun onClick(v: View) {
+          // Perform action on temp button click
+          sendMessage("1")
+        }
+
+      })
+      val offbutton = findViewById<View>(R.id.HueOff) as Button
+      offbutton.setOnClickListener(object : View.OnClickListener {
+        override fun onClick(v: View) {
+          // Perform action on temp button click
+          sendMessage("0")
+        }
+      }
+    }
 
   override fun onDestroy() {
     bluetoothSocket?.close()
@@ -57,7 +76,18 @@ class MainActivity : AppCompatActivity() {
    * Bluetooth message is received.
    */
   fun receiveMessage(message: String) {
-    // TODO
+    if (message.equals("0")) {
+      val onbutton = findViewById<View>(R.id.HueOn) as Button
+      onbutton.isEnabled = true
+      val offbutton = findViewById<View>(R.id.HueOff) as Button
+      offbutton.isEnabled = false
+    }
+    if (message.equals("1")) {
+      val onbutton = findViewById<View>(R.id.HueOn) as Button
+      onbutton.isEnabled = false
+      val offbutton = findViewById<View>(R.id.HueOff) as Button
+      offbutton.isEnabled = true
+    }
   }
 
   /**
