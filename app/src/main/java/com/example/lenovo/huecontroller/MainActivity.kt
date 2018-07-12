@@ -45,8 +45,8 @@ open class MainActivity : AppCompatActivity() {
       }
     }, 0, 3000)
 
-    sendMessage("?") // This will grab the current status of the light.
     val onbutton = findViewById<View>(R.id.HueOn) as Button
+    onbutton.isEnabled = false
     onbutton.setOnClickListener {
       // Perform action on temp button click
       sendMessage("1")
@@ -56,11 +56,26 @@ open class MainActivity : AppCompatActivity() {
       // Perform action on temp button click
       sendMessage("0")
     }
+    offbutton.isEnabled = false
   }
 
   override fun onDestroy() {
     bluetoothSocket?.close()
     super.onDestroy()
+  }
+
+  /**
+   * This method will be called when the Raspberry Pi is connected.
+   */
+  fun piWasConnected() {
+    sendMessage("?") // This will grab the current status of the light.
+  }
+
+  fun piWasDisconnected() {
+    val onbutton = findViewById<View>(R.id.HueOn) as Button
+    onbutton.isEnabled = false
+    val offbutton = findViewById<View>(R.id.HueOff) as Button
+    offbutton.isEnabled = false
   }
 
   /**
@@ -85,14 +100,18 @@ open class MainActivity : AppCompatActivity() {
   /**
    * Call this method to send a Bluetooth message to the light.
    */
-  open fun sendMessage(message: String) {
+  fun sendMessage(message: String) {
     Thread(fun() {
-      synchronized(bluetoothSocketLock) {
-        val currentSocket = getOrCreateBluetoothSocket()
-        currentSocket.outputStream.write(("$message|").toByteArray())
-        currentSocket.outputStream.flush()
-      }
+      sendMessageAsync(message)
     }, "Bluetooth Sender [$message]").start()
+  }
+
+  fun sendMessageAsync(message: String) {
+    synchronized(bluetoothSocketLock) {
+      val currentSocket = getOrCreateBluetoothSocket()
+      currentSocket.outputStream.write(("$message|").toByteArray())
+      currentSocket.outputStream.flush()
+    }
   }
 
   private val bluetoothSocketLock = Object()
@@ -124,28 +143,36 @@ open class MainActivity : AppCompatActivity() {
       Thread(fun() {
         val read = StringBuilder()
         val buffer = ByteArray(32)
-        while (true) {
-          val bytesRead = currentSocket.inputStream.read(buffer)
-          if (bytesRead < 0) {
-            // Is it even possible to get -1 objects?
-            // Android uses this to signal that the device disconnected.
-            break
-          }
-          // Add all the data that came from the socket into "read".
-          read.append(String(buffer, 0, bytesRead))
+        try {
+          while (true) {
+            val bytesRead = currentSocket.inputStream.read(buffer)
+            if (bytesRead < 0) {
+              // Is it even possible to get -1 objects?
+              // Android uses this to signal that the device disconnected.
+              break
+            }
+            // Add all the data that came from the socket into "read".
+            read.append(String(buffer, 0, bytesRead))
 
-          while (read.contains(MESSAGE_SEPARATOR)) {
-            // End of a message. Pull it out of the data.
-            val message = read.substring(0, read.indexOf(MESSAGE_SEPARATOR))
-            read.delete(0, read.indexOf(MESSAGE_SEPARATOR) + 1)
+            while (read.contains(MESSAGE_SEPARATOR)) {
+              // End of a message. Pull it out of the data.
+              val message = read.substring(0, read.indexOf(MESSAGE_SEPARATOR))
+              read.delete(0, read.indexOf(MESSAGE_SEPARATOR) + 1)
 
-            receiveMessageAsync(message)
+              receiveMessageAsync(message)
+            }
           }
+        } catch (e: IOException) {
+          synchronized(bluetoothSocketLock) {
+            bluetoothSocket = null
+          }
+          piWasDisconnectedAsync()
         }
       }, "Bluetooth Socket Reader").start()
 
       // And save the socket for future use.
       bluetoothSocket = currentSocket
+      piWasConnected()
       return currentSocket
     }
   }
@@ -153,6 +180,18 @@ open class MainActivity : AppCompatActivity() {
   open fun receiveMessageAsync(message: String) {
     runOnUiThread {
       receiveMessage(message)
+    }
+  }
+
+  open fun piWasConnectedAsync() {
+    runOnUiThread {
+      piWasConnected()
+    }
+  }
+
+  open fun piWasDisconnectedAsync() {
+    runOnUiThread {
+      piWasDisconnected()
     }
   }
 }
