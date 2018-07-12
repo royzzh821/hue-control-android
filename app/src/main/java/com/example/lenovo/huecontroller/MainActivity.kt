@@ -17,17 +17,18 @@ val BLUETOOTH_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b7541
 // Indicates that a message has ended. This character cannot appear in a message.
 const val MESSAGE_SEPARATOR: Char = '|'
 
-class MainActivity : AppCompatActivity() {
+open class MainActivity : AppCompatActivity() {
 
-  private var bluetoothDevice: BluetoothDevice? = null
+  var bluetoothDevice: BluetoothDevice? = null
   private var bluetoothSocket: BluetoothSocket? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    setContentView(R.layout.activity_main)
 
     // We need Bluetooth.
     val bluetooth = BluetoothAdapter.getDefaultAdapter()
-    if (!bluetooth.isEnabled) {
+    if (bluetooth == null || !bluetooth.isEnabled) {
       startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), 0)
       return
     }
@@ -44,7 +45,6 @@ class MainActivity : AppCompatActivity() {
       }
     }, 0, 3000)
 
-    setContentView(R.layout.activity_main)
     sendMessage("?") // This will grab the current status of the light.
     val onbutton = findViewById<View>(R.id.HueOn) as Button
     onbutton.setOnClickListener {
@@ -85,7 +85,7 @@ class MainActivity : AppCompatActivity() {
   /**
    * Call this method to send a Bluetooth message to the light.
    */
-  fun sendMessage(message: String) {
+  open fun sendMessage(message: String) {
     Thread(fun() {
       synchronized(bluetoothSocketLock) {
         val currentSocket = getOrCreateBluetoothSocket()
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
 
   private val bluetoothSocketLock = Object()
 
-  private fun getOrCreateBluetoothSocket(): BluetoothSocket {
+  fun getOrCreateBluetoothSocket(): BluetoothSocket {
     synchronized(bluetoothSocketLock) {
       var currentSocket = bluetoothSocket
       if (currentSocket != null) return currentSocket
@@ -138,11 +138,8 @@ class MainActivity : AppCompatActivity() {
             // End of a message. Pull it out of the data.
             val message = read.substring(0, read.indexOf(MESSAGE_SEPARATOR))
             read.delete(0, read.indexOf(MESSAGE_SEPARATOR) + 1)
-            Log.i("MainActivity", "Got message $message, remaining: $read")
 
-            runOnUiThread {
-              receiveMessage(message)
-            }
+            receiveMessageAsync(message)
           }
         }
       }, "Bluetooth Socket Reader").start()
@@ -150,6 +147,12 @@ class MainActivity : AppCompatActivity() {
       // And save the socket for future use.
       bluetoothSocket = currentSocket
       return currentSocket
+    }
+  }
+
+  open fun receiveMessageAsync(message: String) {
+    runOnUiThread {
+      receiveMessage(message)
     }
   }
 }
